@@ -8,6 +8,7 @@ import os
 import argparse
 import subprocess
 import json
+from tabulate import tabulate
 from .utils import check_executable,check_state
 
 
@@ -42,9 +43,9 @@ def getOptions():
 # command line
 def main():
     print("Executing %s version %s." % (__name__, __version__))
-    b = Blkinfo()
-    d = b.get_disks()
-    print(d)
+    b = BlkinfoProcessor()
+    i = InteractiveDisplay(b)
+    print(i.get_mount_options())
     print("sdf")
 
 ##################
@@ -73,37 +74,78 @@ class SystemTool(object):
         out = self.call(argument_string)
         return out.stdout
 
-class Blkinfo(object):
+class BlkinfoProcessor(object):
 
     def __init__(self, exe_path='/bin/lsblk'):
         self.lsblk = SystemTool('lsblk', exe_path)
         self.lsblk.check()
 
-    def get_all_info(self):
+    def get_disks(self, mounted=None):
+        blockdevices = self.__get_all_info()['blockdevices']
+        s1 = map(lambda x: DiskInfo(x), blockdevices)
+        s2 = filter(lambda x: BlkinfoProcessor.__is_processable(x.fstype), s1)
+        s3 = filter(lambda x: mounted is None or x.is_mounted() is mounted, s2)
+        return list(s3)
+
+    def __get_all_info(self):
         # out = self.lsblk.stdout("-O --json")
-        out = self.lsblk.stdout("-o FSTYPE,PARTLABEL,UUID,PARTUUID,LABEL,SIZE,MOUNTPOINT,OWNER --json")
+        out = self.lsblk.stdout("-o FSTYPE,PARTLABEL,UUID,PARTUUID,LABEL,SIZE,MOUNTPOINT,OWNER,NAME --json")
         return json.loads(out)
 
-    def get_disks(self):
-        j = self.get_all_info()['blockdevices']
-
-        filtered_list = []
-        for d in j:
-            if d['fstype'] is not None and d['fstype'] != 'squashfs':
-                filtered_list.append(d)
-        return filtered_list
+    @classmethod
+    def __is_processable(cls, fstype):
+        return fstype is not None and fstype != 'squashfs'
 
 class DiskInfo:
-    fstype = None
-    partlabel = None
-    uuid = None
-    label = None
-    partuuid = None
-    size = None
-    mountpoint = None
+
+    def __init__(self, data):
+        self._data = data
+
+    @property
+    def fstype(self):
+        return self._data['fstype']
+
+    @property
+    def name(self):
+        return self._data['name']
+
+    @property
+    def mountpoint(self):
+        return self._data['mountpoint']
+
+    @property
+    def partuuid(self):
+        return self._data['partuuid']
+
+    @property
+    def size(self):
+        return self._data['size']
+
+    @property
+    def label(self):
+        return self._data['label']
+
+    @property
+    def uuid(self):
+        return self._data['uuid']
 
     def is_mounted(self):
         return self.mountpoint is not None
+
+class InteractiveDisplay:
+
+    def __init__(self, blkinfoProcessor):
+        self.__blkinfoProcessor = blkinfoProcessor
+
+    def get_mount_options(self):
+        header = ['id', 'name', 'uuid', 'size', 'fstype', 'label' ]
+        unmounted_disks = self.__blkinfoProcessor.get_disks(mounted=False)
+        rows = []
+        count = 0
+        for x in unmounted_disks:
+            count = count + 1
+            rows.append([count, x.name, x.uuid, x.size, x.fstype, x.label])
+        return tabulate(rows, header)
 
 
 

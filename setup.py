@@ -25,7 +25,7 @@ setup(
     version = version,
     description = "Tool for easily mounting disks to a linux system",
     long_description = long_descr,
-    install_requires=[],
+    install_requires=['tabulate==0.8.3'],
     author = "Robert Tisma",
     author_email = "rtisma@gmail.com",
     url = "https://github.com/rtisma/private-mount-tool",
