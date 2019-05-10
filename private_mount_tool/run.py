@@ -45,7 +45,9 @@ def main():
     print("Executing %s version %s." % (__name__, __version__))
     b = BlkinfoProcessor()
     i = InteractiveDisplay(b)
-    print(i.get_mount_options())
+    print(i.show_all_drives())
+    print(i.show_attachable_drives())
+    print(i.show_detachable_drives())
     print("sdf")
 
 ##################
@@ -82,19 +84,27 @@ class BlkinfoProcessor(object):
 
     def get_disks(self, mounted=None):
         blockdevices = self.__get_all_info()['blockdevices']
-        s1 = map(lambda x: DiskInfo(x), blockdevices)
-        s2 = filter(lambda x: BlkinfoProcessor.__is_processable(x.fstype), s1)
-        s3 = filter(lambda x: mounted is None or x.is_mounted() is mounted, s2)
-        return list(s3)
+        return list(
+            filter(lambda x: BlkinfoProcessor.__filter(x, mounted),
+                   map(lambda x: DiskInfo(x), blockdevices)))
 
     def __get_all_info(self):
         # out = self.lsblk.stdout("-O --json")
-        out = self.lsblk.stdout("-o FSTYPE,PARTLABEL,UUID,PARTUUID,LABEL,SIZE,MOUNTPOINT,OWNER,NAME --json")
+        out = self.lsblk.stdout("-o FSTYPE,PARTLABEL,UUID,PARTUUID,LABEL,SIZE,MOUNTPOINT,OWNER,KNAME --json")
         return json.loads(out)
 
     @classmethod
-    def __is_processable(cls, fstype):
+    def __filter(cls, diskInfo, mounted):
+        return BlkinfoProcessor.__is_correct_fstype(diskInfo) and BlkinfoProcessor.__is_processable(diskInfo, mounted)
+
+    @classmethod
+    def __is_correct_fstype(cls, diskInfo):
+        fstype = diskInfo.fstype
         return fstype is not None and fstype != 'squashfs'
+
+    @classmethod
+    def __is_processable(cls, diskInfo, mounted):
+        return mounted is None or diskInfo.is_mounted() == mounted
 
 class DiskInfo:
 
@@ -106,8 +116,8 @@ class DiskInfo:
         return self._data['fstype']
 
     @property
-    def name(self):
-        return self._data['name']
+    def kname(self):
+        return self._data['kname']
 
     @property
     def mountpoint(self):
@@ -137,14 +147,23 @@ class InteractiveDisplay:
     def __init__(self, blkinfoProcessor):
         self.__blkinfoProcessor = blkinfoProcessor
 
-    def get_mount_options(self):
-        header = ['id', 'name', 'uuid', 'size', 'fstype', 'label' ]
-        unmounted_disks = self.__blkinfoProcessor.get_disks(mounted=False)
+    def show_all_drives(self):
+        return self.__get_options(mounted=None)
+
+    def show_attachable_drives(self):
+        return self.__get_options(mounted=False)
+
+    def show_detachable_drives(self):
+        return self.__get_options(mounted=True)
+
+    def __get_options(self, mounted):
+        header = ['id', 'kname', 'uuid', 'size', 'fstype', 'label', 'mountpoint']
+        unmounted_disks = self.__blkinfoProcessor.get_disks(mounted=mounted)
         rows = []
         count = 0
         for x in unmounted_disks:
             count = count + 1
-            rows.append([count, x.name, x.uuid, x.size, x.fstype, x.label])
+            rows.append([count, x.kname, x.uuid, x.size, x.fstype, x.label, x.mountpoint])
         return tabulate(rows, header)
 
 
